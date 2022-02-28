@@ -1,0 +1,44 @@
+5.	Print an author’s name and the number of books they have authored.
+
+
+select name,count(title)
+from book
+join author on author.id = book.author_id
+group by name
+
+4.	Prints an author’s id and the number of books they have authored.
+ 
+select author_id,count(title)
+from book
+group by author_id
+
+3. Return title of each book, along with the name of the author, and the rating of a review. 
+Only show rows where the author of the book is also the author of the review.
+
+select name,rating,title
+from review
+inner join book on book.id = review.book_id
+inner join author on author.id = book.author_id;
+
+2.Return title of each book, along with the name of the author.
+ All authors should be included, even if they don’t have a book associated with them.
+
+select name,title
+from book
+left join author on author.id = book.author_id
+
+
+select name,title
+from book
+inner join author on author.id = book.author_id
+order by name
+
+
+1.	For each book, print the title of the book and name of the author. 
+
+
+select name,title
+from book
+join author on author.id = book.author_id
+
+

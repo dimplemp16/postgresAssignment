@@ -1,0 +1,274 @@
+/*
+/* 126 */
+CREATE OR REPLACE FUNCTION set_emplyee_default_photo() RETURNS void AS $$
+	UPDATE employees
+	SET photopath='http://accweb/emmployees/default.bmp'
+	WHERE photopath IS NULL;
+$$ LANGUAGE SQL
+
+SELECT set_employee_default_photo(); 
+
+/* 127 */
+CREATE OR REPLACE FUNCTION biggest_order() RETURNS double precision AS $$
+
+	SELECT MAX(amount)
+	FROM
+	(SELECT SUM(unitprice*quantity) AS amount, orderid
+	FROM order_details
+	GROUP BY orderid) AS totals;
+
+$$ LANGUAGE SQL;
+
+SELECT biggest_order();
+
+/* 128 */
+CREATE OR REPLACE FUNCTION most_ordered_product(customerid bp) RETURNS varchar(40) AS $$
+
+	SELECT productname 
+	FROM products
+	where productid IN (SELECT productid FROM
+	(SELECT SUM(quantity) AS total_ordered, productid
+	FROM order_details
+	NATURAL JOIN orders
+	WHERE customerid=$1
+	GROUP BY productid
+	ORDER BY total_ordered DESC
+	LIMIT 1) AS ordered_products);
+
+$$ LANGUAGE SQL;
+
+SELECT most_ordered_product('CACTU'); 
+
+/* 129 */
+CREATE OR REPLACE FUNCTION full_name(employees) RETURNS varchar(62) AS $$
+	SELECT $1.title || ' ' || $1.firstname || ' ' || $1.lastname
+$$ LANGUAGE SQL;
+
+SELECT full_name(employees.*)
+FROM employees;
+
+/* 130 */
+CREATE OR REPLACE FUNCTION highest_inventory() RETURNS products AS $$
+
+	SELECT * FROM products
+	ORDER BY (unitprice*unitsinstock) DESC
+	LIMIT 1;
+
+$$ LANGUAGE SQL;
+
+SELECT productname(highest_inventory());
+
+/* 131 */
+CREATE OR REPLACE FUNCTION square_n_cube(IN x int, OUT square int, OUT cube int) AS $$
+	SELECT x*x, x*x*x;
+$$ LANGUAGE SQL;
+
+SELECT (square_n_cube(5)).*;
+
+/* 132 */
+CREATE OR REPLACE FUNCTION square_n_cube(IN x int DEFAULT 10, OUT square int, OUT cube int) AS $$
+	SELECT x*x, x*x*x;
+$$ LANGUAGE SQL;
+
+SELECT (square_n_cube()).*;
+
+/* 133 */
+SELECT productname, companyname
+FROM highest_inventory() AS top_inventory
+JOIN suppliers ON top_inventory.supplierid=suppliers.supplierid;
+
+/* 134 */
+CREATE OR REPLACE FUNCTION suppliers_to_reorder_from()
+RETURNS SETOF suppliers AS $$
+  SELECT * FROM suppliers
+  WHERE supplierid IN (
+	 SELECT supplierid FROM products
+	  WHERE unitsinstock + unitsonorder < reorderlevel
+  )
+$$ LANGUAGE SQL;
+
+SELECT * FROM suppliers_to_reorder_from();
+
+/* 134.2 */ 
+CREATE OR REPLACE FUNCTION excess_inventory(percentage numeric)
+RETURNS TABLE(excess int, productid smallint, productname varchar(40)) AS $$ 
+	
+	SELECT CEIL(unitsinstock + unitsonorder - (reorderlevel * (percentage/100)))::int,
+	productid, productname
+	FROM products
+	WHERE unitsinstock + unitsonorder - (reorderlevel * (percentage/100)) > 0
+
+$$ LANGUAGE SQL
+
+SELECT * FROM excess_inventory_level(200);
+
+/* 135 */
+CREATE PROCEDURe change_supplier_prices(supplierid smallint, amount real) AS $$
+
+	UPDATE products /* or 'prices' ?*/
+	SET unitprice = unitprice + amount
+	WHERE supplierid = $1
+	
+$$ LANGUAGE SQL;
+
+CALL change_supplier_prices(20::smallint, 0.5);
+
+/* 147 */
+DROP ROUTINE IF EXISTS biggest_order();
+
+CREATE FUNCTION biggest_order() RETURNS double precision AS $$
+BEGIN
+	RETURN MAX(amount)
+	FROM
+	(SELECT SUM(unitprice*quantity) as amount,orderid
+	FROM order_details
+	GROUP BY orderid) as totals;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT biggest_order();
+
+/* 148 */
+CREATE OR REPLACE FUNCTION square_n_cube
+	(IN x int, OUT square int, OUT cube int) AS $$
+BEGIN
+	square := x*x;
+	cube := x*x*x;
+	RETURN;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT (square_n_cube(5)).*;
+
+/* 149 */
+CREATE OR REPLACE FUNCTION suppliers_to_order_from()
+RETURNS SETOF suppliers AS $$
+BEGIN
+	RETURN QUERY SELECT * FROM suppliers
+	WHERE supplierid IN (
+		SELECT supplierid FROM products
+		WHERE unitsinstock + unitsonorder < reorderlevel
+	);
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM supplier_to_reorder_from();
+
+/* 150 */
+CREATE OR REPLACE FUNCTION normal_orders()
+RETURNS SETOF orders AS $$
+	DECLARE
+		average_order_amount real;
+		bottom_order_amount real;
+		top_order_amount real;
+	BEGIN
+		SELECT AVG(amount_ordered) INTO average_order_amount FROM(
+		  SELECT SUM(unitprice*quantity) AS amount_ordered,orderid
+		  FROM order_details
+		  GROUP BY orderid) as order_totals;
+
+		 bottom_order_amount := average_order_amount * 0.75;
+		 top_order_amount := average_order_amount * 1.30;
+
+		 RETURN QUERY SELECT * FROM orders
+		 WHERE orderid IN (
+			SELECT orderid FROM(
+				SELECT SUM(unitprice*quantity) AS amount_ordered,orderid
+				FROM order_details
+				GROUP BY orderid
+				HAVING SUM(unitprice*quantity) BETWEEN bottom_order_amount AND top_order_amount) AS order_amount
+		 );
+	END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM normal_orders();
+
+/* 151 */
+CREATE OR REPLACE FUNCTION average_of_square() RETURNS double precision AS $$
+DECLARE
+	square_total int := 0;
+	total_count int := 0;
+	product record;
+BEGIN
+	FOR product IN SELECT * FROM products LOOP
+		total_count := total_count + 1;
+		square_total := square_total + (product.unitprice*product.unitprice);
+	END LOOP;
+	RETURN square_total / total_count;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT average_of_square();
+
+/* 152 */
+CREATE OR REPLACE FUNCTION time_of_year(date_to_check timestamp) RETURNS text AS $$
+DECLARE
+	month_of_year int := EXTRACT(MONTH FROM date_to_check);
+BEGIN
+	IF month_of_year >=3 AND month_of_year <=5 THEN
+		RETURN 'Spring';
+	ELSIF month_of_year >= 6 AND month_of_year <=8 THEN
+		RETURN 'Summer';
+	ELSIF month_of_year >= 9 AND month_of_year <=11 THEN
+		RETURN 'Fall';
+	ELSE
+		RETURN 'Winter';
+	END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT  time_of_year(orderdate),*
+FROM orders;
+
+/* 153 */
+CREATE OR REPLACE FUNCTION after_christmas_sale() RETURNS SETOF products AS $$
+DECLARE
+	product record;
+BEGIN
+	FOR product IN
+		SELECT * FROM products
+	LOOP
+		IF product.categoryid IN (1,4,8) THEN
+			product.unitprice = product.unitprice * .80;
+		ELSIF product.categoryid IN (2,3,7) THEN
+			product.unitprice = product.unitprice * .75;
+		ELSE
+			product.unitprice = product.unitprice * 1.10;
+		END IF;
+		RETURN NEXT product;
+	END LOOP;
+	RETURN;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM after_christmas_sale();
+
+/* 154 */
+CREATE OR REPLACE FUNCTION factorial(x float) RETURNS float AS $$
+DECLARE
+	current_x float := x;
+	running_multiplication float := 1;
+BEGIN
+	WHILE current_x > 0 LOOP
+		running_multiplication := running_multiplication * current_x;
+		current_x := current_x - 1;
+	END LOOP;
+	RETURN running_multiplication;
+END;
+$$ LANGUAGE plpgsql;
+
+/* 155 */
+CREATE OR REPLACE FUNCTION first_multiple(x int[], y int) RETURNS int AS $$
+DECLARE
+	test_number int;
+BEGIN
+	FOREACH test_number IN ARRAY x LOOP
+		IF test_number % y = 0 THEN
+			RETURN test_number;
+		END IF;
+	END LOOP;
+	RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT first_multiple(ARRAY[13, 12, 64, 10], 32);
